@@ -16,8 +16,8 @@ const (
 )
 
 var (
-	ErrInvalidAuth = errors.New("panel rejected authentication")
-	ErrNoPassword  = errors.New("AMT_PASSWORD is required")
+	ErrInvalidAuth = errors.New("invalid remote password")
+	ErrNoPassword  = errors.New("remote password is required")
 )
 
 type Client struct {
@@ -49,7 +49,7 @@ func (c *Client) GetStatus() (PanelStatus, error) {
 		return PanelStatus{}, err
 	}
 	if len(frame.Payload) < 143 {
-		return PanelStatus{}, fmt.Errorf("status payload too short: got %d want at least 143", len(frame.Payload))
+		return PanelStatus{}, statusPayloadTooShortError(frame)
 	}
 	return parseStatus(frame.Payload)
 }
@@ -80,11 +80,35 @@ func (c *Client) connectAndAuth() (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	if frame.Command != cmdAuth || (len(frame.Payload) > 0 && frame.Payload[0] == 0x00) {
+	if err := checkAuthResponse(frame); err != nil {
 		conn.Close()
-		return nil, ErrInvalidAuth
+		return nil, err
 	}
 	return conn, nil
+}
+
+func checkAuthResponse(frame Frame) error {
+	if frame.Command != cmdAuth {
+		return fmt.Errorf("unexpected auth response command 0x%04x", frame.Command)
+	}
+	if len(frame.Payload) == 0 {
+		return errors.New("empty auth response")
+	}
+	switch frame.Payload[0] {
+	case 0x00:
+		return nil
+	case 0x01:
+		return ErrInvalidAuth
+	default:
+		return fmt.Errorf("panel rejected authentication: code=0x%02x", frame.Payload[0])
+	}
+}
+
+func statusPayloadTooShortError(frame Frame) error {
+	if len(frame.Payload) == 1 {
+		return fmt.Errorf("status payload too short: command=0x%04x code=0x%02x got 1 want at least 143", frame.Command, frame.Payload[0])
+	}
+	return fmt.Errorf("status payload too short: command=0x%04x got %d want at least 143 payload=% x", frame.Command, len(frame.Payload), frame.Payload)
 }
 
 func (c *Client) writeFrame(conn net.Conn, command uint16, payload []byte) error {

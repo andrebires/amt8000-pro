@@ -23,12 +23,24 @@ go run ./cmd/amt8000-pro >"/tmp/amt8000-pro-${stamp}.log" 2>&1 &
 pid="$!"
 trap 'kill "$pid" >/dev/null 2>&1 || true' EXIT
 
+cookie_jar="/tmp/amt8000-pro-${stamp}.cookies"
 for _ in $(seq 1 40); do
-  if curl -fsS "http://${AMT_HTTP_ADDR}/api/status" >/tmp/amt8000-pro-status.json; then
+  if curl -fsS "http://${AMT_HTTP_ADDR}/login" >/dev/null; then
     break
   fi
   sleep 0.25
 done
+
+curl -fsS \
+  -c "$cookie_jar" \
+  -d "host=${AMT_HOST}" \
+  -d "port=${AMT_PORT}" \
+  -d "password=${AMT_PASSWORD}" \
+  "http://${AMT_HTTP_ADDR}/login" >/tmp/amt8000-pro-login.html
+
+curl -fsS \
+  -b "$cookie_jar" \
+  "http://${AMT_HTTP_ADDR}/api/status" >/tmp/amt8000-pro-status.json
 
 if [[ ! -s /tmp/amt8000-pro-status.json ]]; then
   echo "status request failed" >&2
@@ -53,4 +65,3 @@ fi
 } >"$report"
 
 echo "Wrote $report"
-

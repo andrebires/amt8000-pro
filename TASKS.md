@@ -6,12 +6,13 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 - [x] Choose project tracking format: Markdown tasks plus ADRs.
 - [x] Choose implementation stack: Go single-binary LAN web app.
-- [x] Initialize canonical repo at `/Users/andrebires/Repositories/amt8000-pro`.
+- [x] Initialize canonical repo at `~/Repositories/amt8000-pro`.
 - [x] Make first bootstrap commit.
 
 ## Phase 1 - Read-Only Status MVP
 
 - [x] Scaffold Go module and package layout.
+- [x] Add browser login form for panel IP, port, and remote password.
 - [x] Implement ISECNet frame encoding and checksum.
 - [x] Implement remote password encoding.
 - [x] Implement TCP connect/auth/status/disconnect client.
@@ -45,3 +46,18 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [ ] Add guarded write flows with diff preview.
 - [ ] Add read-after-write verification for every setting.
 - [ ] Keep firmware update, reset, and memory unlock disabled.
+
+## Phase 5 - AMT Remoto / Programador AMT 8000 Feature Parity
+
+Detailed backlog: `docs/backlog/amt-remoto-parity.md`.
+
+- [ ] Finish current read-only LAN console evidence and sanitized fixtures.
+- [ ] Implement Online tab parity: richer status, arm/disarm, PGM, clock sync, bypass, clear alarm memory.
+- [ ] Implement LAN device discovery and saved panel profiles.
+- [ ] Decide and implement local users/roles/audit if needed for multi-device LAN access.
+- [ ] Implement read-only event download and export.
+- [ ] Implement full configuration download and immutable snapshots.
+- [ ] Map Programador AMT 8000 configuration sections: Geral, Usuarios, Setores, Comunicacao, Monitoramento IP, Ethernet/WiFi, GPRS, Auto-ativacao, Dispositivos, Eventos monitoramento, and Eventos Push.
+- [ ] Implement configuration editing only after protocol evidence and backup/read-after-write safety gates.
+- [ ] Implement backup/restore workflows after configuration write support is proven.
+- [ ] Document deferred AMT Remoto transports: serial/USB, modem, receptor-IP account, and Intelbras Cloud.

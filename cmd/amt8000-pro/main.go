@@ -13,10 +13,11 @@ import (
 
 func main() {
 	cfg := panel.ConfigFromEnv()
-	client := isecnet.NewClient(cfg.Host, cfg.Port, cfg.Password, 5*time.Second)
-	server := web.NewServer(client)
+	server := web.NewServer(func(conn web.PanelConnection) web.StatusClient {
+		return isecnet.NewClient(conn.Host, conn.Port, conn.Password, 5*time.Second)
+	})
 
-	log.Printf("amt8000-pro listening on %s for panel %s:%d", cfg.HTTPAddr, cfg.Host, cfg.Port)
+	log.Printf("amt8000-pro listening on %s", cfg.HTTPAddr)
 	if err := http.ListenAndServe(cfg.HTTPAddr, server.Routes()); err != nil {
 		log.Printf("server failed: %v", err)
 		os.Exit(1)

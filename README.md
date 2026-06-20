@@ -1,61 +1,92 @@
-# AMT 8000 Pro LAN Console
+# Console LAN para AMT 8000 Pro
 
-Local web console for Intelbras AMT 8000 Pro panels.
+Aplicacao web local para consultar e, futuramente, programar centrais de alarme
+Intelbras AMT 8000 Pro pela rede local.
 
-The first implementation target is a read-only status dashboard over the local
-ISECNet v2 protocol on TCP port `9009`. Programming writes are intentionally
-later-phase work and must be validated with read-after-write checks against the
-local panel.
+Este projeto nao e oficial da Intelbras. O objetivo e oferecer uma alternativa
+multiplataforma ao AMT Remoto / Programador AMT 8000 para uso em Mac, Windows,
+Linux, celulares e tablets conectados na mesma rede local.
 
-## Requirements
+## Estado atual
 
-- Go 1.26+
-- AMT 8000 Pro reachable from the host running this service
-- Remote access password from the panel QR label or configured installer docs
+- Login pelo navegador informando IP da central, porta e senha de acesso remoto.
+- Conexao local via Ethernet usando ISECNet v2 na porta TCP `9009`.
+- Painel web com status basico da central.
+- Parser inicial para modelo, versao de firmware, particoes, setores, sirene,
+  tamper e bateria.
+- Backlog de paridade com AMT Remoto e Programador AMT 8000 em
+  `docs/backlog/amt-remoto-parity.md`.
 
-## Configuration
+Funcionalidades de escrita, como armar/desarmar, bypass, PGM e programacao da
+central, ainda dependem de evidencia de protocolo e testes em painel real.
 
-Copy `.env.example` to `.env` locally, then set:
+## Requisitos
+
+- Go 1.26 ou superior
+- Central AMT 8000 Pro acessivel a partir do computador que roda este servico
+- Senha de acesso remoto/download da central
+
+## Configuracao
+
+O formulario de login no navegador pede:
+
+- IP local da central
+- Porta, normalmente `9009`
+- Senha remota/download
+
+As credenciais ficam em um cookie de sessao `HttpOnly` no navegador local e nao
+sao gravadas no repositorio.
+
+Para mudar o endereco HTTP do servidor, copie `.env.example` para `.env`:
 
 ```sh
-AMT_HOST=192.168.1.50
-AMT_PORT=9009
-AMT_PASSWORD=878787
 AMT_HTTP_ADDR=:8080
 ```
 
-Do not commit `.env` or packet captures.
+Nao commite arquivos `.env`, senhas, capturas de pacote ou dados reais da sua
+instalacao.
 
-## Run
+## Como rodar
 
 ```sh
 go run ./cmd/amt8000-pro
 ```
 
-Open `http://localhost:8080`.
+Depois acesse:
 
-## Test
+```text
+http://localhost:8080
+```
 
-Unit tests:
+## Testes
+
+Testes automatizados:
 
 ```sh
 go test ./...
 ```
 
-Real-panel status smoke test:
+Smoke test contra uma central real:
 
 ```sh
-AMT_HOST=192.168.1.50 AMT_PASSWORD=878787 scripts/production-status-test.sh
+AMT_HOST=192.168.1.50 AMT_PASSWORD=123456 scripts/production-status-test.sh
 ```
 
-The script writes a Markdown report under `docs/test-runs/`.
+O script gera um relatorio Markdown em `docs/test-runs/`.
 
-## Safety Policy
+## Politica de seguranca
 
-- Read-only features can be tested directly against the panel.
-- Arm/disarm requires an explicit manual safety checklist before implementation.
-- Programming/configuration writes require packet-capture evidence and
-  read-after-write verification.
-- Firmware update, memory unlock, reset, and destructive commands are out of
-  scope until explicitly requested.
+- Recursos somente leitura podem ser testados diretamente contra a central.
+- Recursos de controle, como armar/desarmar e PGM, exigem checklist manual de
+  seguranca antes da implementacao.
+- Escritas de configuracao exigem captura/evidencia de protocolo, backup previo
+  e verificacao de leitura apos escrita.
+- Atualizacao de firmware, reset de fabrica, desbloqueio de memoria e comandos
+  destrutivos estao fora de escopo ate pedido explicito.
 
+## Referencias
+
+- Manual AMT Remoto:
+  `https://backend.intelbras.com/sites/default/files/2024-09/Manual_AMT_Remoto_01-21_site%20-%20Arquivo%20Final.pdf`
+- Manual Programador AMT 8000:
+  `https://backend.intelbras.com/sites/default/files/2021-12/Manual_programador_AMT_8000_01-21_site.pdf`
