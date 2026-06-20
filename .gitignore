@@ -1,0 +1,26 @@
+.DS_Store
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+logs/
+
+# Build outputs
+/bin/
+/dist/
+/tmp/
+*.test
+
+# Captures may contain alarm credentials or topology.
+captures/
+*.pcap
+*.pcapng
+
