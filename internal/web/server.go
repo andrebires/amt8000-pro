@@ -208,16 +208,23 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     main { max-width: 1120px; margin: 0 auto; padding: 20px; }
     h1 { margin: 0; font-size: 24px; }
     h2 { margin: 0 0 12px; font-size: 18px; }
+    h3 { margin: 0 0 8px; font-size: 15px; }
     .muted { color: var(--muted); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
     .metric { font-size: 28px; font-weight: 700; }
     .ok { color: var(--accent); }
     .bad { color: var(--warn); }
+    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:16px 0; }
+    .statusline { display:flex; gap:16px; flex-wrap:wrap; font-size:14px; }
+    .section-grid { display:grid; grid-template-columns: minmax(0, 1fr); gap:12px; }
+    .trouble-list { margin:0; padding-left:18px; }
+    .pill { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border:1px solid var(--line); border-radius:999px; font-size:12px; font-weight:700; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
     th { color: var(--muted); font-weight: 600; }
     .error { border-color: var(--warn); color: var(--warn); }
+    button { min-height:36px; border:1px solid var(--line); border-radius:6px; padding:6px 12px; font:inherit; font-weight:700; background:transparent; color:inherit; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -235,32 +242,133 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
         <p>{{.Error}}</p>
       </section>
     {{else}}
+      <section class="toolbar">
+        <div class="statusline">
+          <span>Connection elapsed: <strong id="elapsed">0s</strong></span>
+          <span>Last refresh: <strong id="last-refresh">initial load</strong></span>
+          <span id="refresh-error" class="bad"></span>
+        </div>
+        <button type="button" id="refresh-button">Refresh</button>
+      </section>
       <section class="grid">
-        <div class="card"><h2>State</h2><div class="metric">{{.Status.State}}</div></div>
-        <div class="card"><h2>Firmware</h2><div class="metric">{{.Status.Version}}</div><div class="muted">Model 0x{{printf "%x" .Status.Model}}</div></div>
-        <div class="card"><h2>Battery</h2><div class="metric">{{.Status.Battery}}</div></div>
-        <div class="card"><h2>Siren</h2><div class="metric {{if .Status.SirenLive}}bad{{else}}ok{{end}}">{{if .Status.SirenLive}}Live{{else}}Quiet{{end}}</div></div>
+        <div class="card"><h2>State</h2><div class="metric" id="state">{{.Status.State}}</div></div>
+        <div class="card"><h2>Firmware</h2><div class="metric" id="version">{{.Status.Version}}</div><div class="muted">Model <span id="model">0x{{printf "%x" .Status.Model}}</span></div></div>
+        <div class="card"><h2>Panel Clock</h2><div class="metric" id="panel-date-time">{{if .Status.PanelDateTime}}{{.Status.PanelDateTime}}{{else}}unsupported{{end}}</div></div>
+        <div class="card"><h2>Battery</h2><div class="metric" id="battery">{{.Status.Battery}}</div><div class="muted">Voltage <span id="battery-voltage">unsupported</span></div></div>
+        <div class="card"><h2>Source</h2><div class="metric" id="source-voltage">unsupported</div><div class="muted">AC/source voltage</div></div>
+        <div class="card"><h2>Siren</h2><div class="metric {{if .Status.SirenLive}}bad{{else}}ok{{end}}" id="siren">{{if .Status.SirenLive}}Live{{else}}Quiet{{end}}</div></div>
+        <div class="card"><h2>Troubles</h2><div class="metric" id="trouble-count">{{len .Status.Troubles}}</div><div class="muted">Known derived problems</div></div>
       </section>
-      <section class="card">
-        <h2>Partitions</h2>
-        <table>
-          <thead><tr><th>#</th><th>Armed</th><th>Stay</th><th>Fired</th><th>Firing</th></tr></thead>
-          <tbody>
-            {{range .Status.Partitions}}<tr><td>{{.Index}}</td><td>{{.Armed}}</td><td>{{.Stay}}</td><td>{{.Fired}}</td><td>{{.Firing}}</td></tr>{{end}}
-          </tbody>
-        </table>
-      </section>
-      <section class="card" style="margin-top:12px">
-        <h2>Zones</h2>
-        <table>
-          <thead><tr><th>#</th><th>Open</th><th>Violated</th><th>Bypassed</th><th>Tamper</th><th>Low Battery</th></tr></thead>
-          <tbody>
-            {{range .Status.Zones}}<tr><td>{{.Index}}</td><td>{{.Open}}</td><td>{{.Violated}}</td><td>{{.Bypassed}}</td><td>{{.Tamper}}</td><td>{{.LowBattery}}</td></tr>{{end}}
-          </tbody>
-        </table>
-      </section>
+      <div class="section-grid">
+        <section class="card">
+          <h2>Partitions</h2>
+          <table>
+            <thead><tr><th>#</th><th>State</th><th>Armed</th><th>Stay</th><th>Fired</th><th>Firing</th></tr></thead>
+            <tbody id="partitions">
+              {{range .Status.Partitions}}<tr><td>{{.Index}}</td><td><span class="pill">{{.State}}</span></td><td>{{.Armed}}</td><td>{{.Stay}}</td><td>{{.Fired}}</td><td>{{.Firing}}</td></tr>{{end}}
+            </tbody>
+          </table>
+        </section>
+        <section class="card">
+          <h2>Zones</h2>
+          <table>
+            <thead><tr><th>#</th><th>State</th><th>Open</th><th>Fired</th><th>Bypassed</th><th>Tamper</th><th>Low Battery</th></tr></thead>
+            <tbody id="zones">
+              {{range .Status.Zones}}<tr><td>{{.Index}}</td><td><span class="pill">{{.State}}</span></td><td>{{.Open}}</td><td>{{.Violated}}</td><td>{{.Bypassed}}</td><td>{{.Tamper}}</td><td>{{.LowBattery}}</td></tr>{{end}}
+            </tbody>
+          </table>
+        </section>
+        <section class="card">
+          <h2>Pending Problems</h2>
+          <ul class="trouble-list" id="troubles">
+            {{range .Status.Troubles}}<li>{{.Message}}{{if .Zone}} - Zone {{.Zone}}{{end}}</li>{{else}}<li class="muted">No known derived problems.</li>{{end}}
+          </ul>
+        </section>
+      </div>
     {{end}}
   </main>
+  <script>
+    const startedAt = Date.now();
+    const elapsedEl = document.getElementById("elapsed");
+    const refreshEl = document.getElementById("last-refresh");
+    const errorEl = document.getElementById("refresh-error");
+    const refreshButton = document.getElementById("refresh-button");
+
+    function boolText(value) {
+      return value ? "true" : "false";
+    }
+
+    function voltageText(value) {
+      return value === null || value === undefined ? "unsupported" : Number(value).toFixed(2) + " V";
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function renderStatus(status) {
+      setText("state", status.state);
+      setText("version", status.version);
+      setText("model", "0x" + Number(status.model).toString(16));
+      setText("panel-date-time", status.panelDateTime || "unsupported");
+      setText("battery", status.battery);
+      setText("battery-voltage", voltageText(status.batteryVoltage));
+      setText("source-voltage", voltageText(status.sourceVoltage));
+      setText("siren", status.sirenLive ? "Live" : "Quiet");
+      document.getElementById("siren")?.classList.toggle("bad", status.sirenLive);
+      document.getElementById("siren")?.classList.toggle("ok", !status.sirenLive);
+      setText("trouble-count", status.troubles ? status.troubles.length : 0);
+
+      const partitions = document.getElementById("partitions");
+      if (partitions) {
+        partitions.innerHTML = (status.partitions || []).map((partition) => "<tr><td>" + partition.index + "</td><td><span class=\"pill\">" + partition.state + "</span></td><td>" + boolText(partition.armed) + "</td><td>" + boolText(partition.stay) + "</td><td>" + boolText(partition.fired) + "</td><td>" + boolText(partition.firing) + "</td></tr>").join("");
+      }
+
+      const zones = document.getElementById("zones");
+      if (zones) {
+        zones.innerHTML = (status.zones || []).map((zone) => "<tr><td>" + zone.index + "</td><td><span class=\"pill\">" + zone.state + "</span></td><td>" + boolText(zone.open) + "</td><td>" + boolText(zone.violated) + "</td><td>" + boolText(zone.bypassed) + "</td><td>" + boolText(zone.tamper) + "</td><td>" + boolText(zone.lowBattery) + "</td></tr>").join("");
+      }
+
+      const troubles = document.getElementById("troubles");
+      if (troubles) {
+        if (!status.troubles || status.troubles.length === 0) {
+          troubles.innerHTML = "<li class=\"muted\">No known derived problems.</li>";
+        } else {
+          troubles.innerHTML = status.troubles.map((trouble) => "<li>" + trouble.message + (trouble.zone ? " - Zone " + trouble.zone : "") + "</li>").join("");
+        }
+      }
+    }
+
+    async function refreshStatus() {
+      if (!refreshButton) return;
+      refreshButton.disabled = true;
+      try {
+        const response = await fetch("/api/status", {headers: {"Accept": "application/json"}});
+        if (!response.ok) throw new Error(await response.text());
+        renderStatus(await response.json());
+        errorEl.textContent = "";
+        refreshEl.textContent = new Date().toLocaleTimeString();
+      } catch (error) {
+        errorEl.textContent = "Refresh failed: " + String(error.message || error).trim();
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    function updateElapsed() {
+      if (!elapsedEl) return;
+      const total = Math.floor((Date.now() - startedAt) / 1000);
+      const minutes = Math.floor(total / 60);
+      const seconds = total % 60;
+      elapsedEl.textContent = minutes > 0 ? minutes + "m " + seconds + "s" : seconds + "s";
+    }
+
+    refreshButton?.addEventListener("click", refreshStatus);
+    setInterval(updateElapsed, 1000);
+    setInterval(refreshStatus, 10000);
+    updateElapsed();
+  </script>
 </body>
 </html>`))
 

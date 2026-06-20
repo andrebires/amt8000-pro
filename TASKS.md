@@ -21,12 +21,12 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [x] Add JSON status endpoint at `/api/status`.
 - [x] Add unit tests for protocol primitives and parser.
 - [x] Run unit tests from the canonical repo.
-- [ ] Run real-panel status smoke test.
-- [ ] Record production evidence under `docs/test-runs/`.
+- [x] Run real-panel status smoke test.
+- [x] Record production evidence under `docs/test-runs/`.
 
 ## Phase 2 - Safe Control
 
-- [ ] Add explicit safety checklist for arm/disarm.
+- [x] Add explicit safety checklist for arm/disarm.
 - [ ] Implement arm/disarm protocol methods.
 - [ ] Add dashboard controls with confirmation.
 - [ ] Test arm/disarm against local panel.
@@ -51,8 +51,8 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 Detailed backlog: `docs/backlog/amt-remoto-parity.md`.
 
-- [ ] Finish current read-only LAN console evidence and sanitized fixtures.
-- [ ] Implement Online tab parity: richer status, arm/disarm, PGM, clock sync, bypass, clear alarm memory.
+- [x] Finish current read-only LAN console evidence and sanitized fixtures.
+- [~] Implement Online tab parity: richer read-only status is implemented; arm/disarm, PGM, clock sync, bypass, and clear alarm memory remain evidence-gated.
 - [ ] Implement LAN device discovery and saved panel profiles.
 - [ ] Decide and implement local users/roles/audit if needed for multi-device LAN access.
 - [ ] Implement read-only event download and export.

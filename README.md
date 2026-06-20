@@ -72,7 +72,15 @@ Smoke test contra uma central real:
 AMT_HOST=192.168.1.50 AMT_PASSWORD=123456 scripts/production-status-test.sh
 ```
 
-O script gera um relatorio Markdown em `docs/test-runs/`.
+O script gera um relatorio Markdown em `docs/test-runs/` e uma fixture
+sanitizada em `docs/fixtures/status/`. A fixture omite IP, senha e cookie, mas
+mantem o frame/payload de resposta para testes e documentacao de protocolo.
+
+Para gerar somente a fixture JSON do status:
+
+```sh
+AMT_HOST=192.168.1.50 AMT_PASSWORD=123456 go run ./cmd/amt8000-status-capture
+```
 
 ## Politica de seguranca
 

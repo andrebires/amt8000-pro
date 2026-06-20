@@ -15,9 +15,12 @@ export AMT_PORT="${AMT_PORT:-9009}"
 export AMT_HTTP_ADDR="${AMT_HTTP_ADDR:-127.0.0.1:18080}"
 
 report_dir="docs/test-runs"
+fixture_dir="docs/fixtures/status"
 mkdir -p "$report_dir"
+mkdir -p "$fixture_dir"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 report="$report_dir/${stamp}-status.md"
+fixture="$fixture_dir/${stamp}-status.json"
 
 go run ./cmd/amt8000-pro >"/tmp/amt8000-pro-${stamp}.log" 2>&1 &
 pid="$!"
@@ -42,9 +45,27 @@ curl -fsS \
   -b "$cookie_jar" \
   "http://${AMT_HTTP_ADDR}/api/status" >/tmp/amt8000-pro-status.json
 
+go run ./cmd/amt8000-status-capture >"$fixture"
+
 if [[ ! -s /tmp/amt8000-pro-status.json ]]; then
   echo "status request failed" >&2
   cat "/tmp/amt8000-pro-${stamp}.log" >&2 || true
+  exit 1
+fi
+
+if [[ ! -s "$fixture" ]]; then
+  echo "fixture capture failed" >&2
+  cat "/tmp/amt8000-pro-${stamp}.log" >&2 || true
+  exit 1
+fi
+
+if grep -Fq "${AMT_PASSWORD}" "$fixture"; then
+  echo "fixture contains the remote password" >&2
+  exit 1
+fi
+
+if grep -Fq "${AMT_HOST}" "$fixture"; then
+  echo "fixture contains the panel host" >&2
   exit 1
 fi
 
@@ -52,9 +73,10 @@ fi
   echo "# Production Status Test"
   echo
   echo "- Timestamp UTC: ${stamp}"
-  echo "- Panel host: ${AMT_HOST}"
+  echo "- Panel host: omitted"
   echo "- Panel port: ${AMT_PORT}"
   echo "- Result: pass"
+  echo "- Sanitized fixture: ${fixture}"
   echo
   echo "## Response"
   echo

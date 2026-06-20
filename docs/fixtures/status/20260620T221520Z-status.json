@@ -1,0 +1,85 @@
+{
+  "capturedAtUtc": "2026-06-20T22:15:22Z",
+  "command": "0x0b4a",
+  "response": {
+    "frameHex": "8fe0000000910b4a8a0200020d006203010000001f0000000000000064910000000000000000000000000000000000000000000000000000000000000000000000000000000000002006261915210000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000b4a071",
+    "payloadHex": "8a0200020d006203010000001f0000000000000064910000000000000000000000000000000000000000000000000000000000000000000000000000000000002006261915210000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000b4a0",
+    "payloadLength": 143
+  },
+  "parsedStatus": {
+    "model": 138,
+    "version": "2.0.2",
+    "state": "ARMED",
+    "sirenLive": false,
+    "zonesFiring": false,
+    "zonesClosed": true,
+    "battery": "full",
+    "batteryVoltage": null,
+    "sourceVoltage": null,
+    "tamper": false,
+    "troubles": [],
+    "partitions": [
+      {
+        "index": 0,
+        "enabled": true,
+        "state": "ARMED",
+        "stay": false,
+        "fired": false,
+        "firing": false,
+        "armed": true
+      }
+    ],
+    "zones": [
+      {
+        "index": 1,
+        "state": "CLOSED",
+        "open": false,
+        "violated": false,
+        "bypassed": false,
+        "tamper": false,
+        "lowBattery": false
+      },
+      {
+        "index": 2,
+        "state": "CLOSED",
+        "open": false,
+        "violated": false,
+        "bypassed": false,
+        "tamper": false,
+        "lowBattery": false
+      },
+      {
+        "index": 3,
+        "state": "CLOSED",
+        "open": false,
+        "violated": false,
+        "bypassed": false,
+        "tamper": false,
+        "lowBattery": false
+      },
+      {
+        "index": 4,
+        "state": "CLOSED",
+        "open": false,
+        "violated": false,
+        "bypassed": false,
+        "tamper": false,
+        "lowBattery": false
+      },
+      {
+        "index": 5,
+        "state": "CLOSED",
+        "open": false,
+        "violated": false,
+        "bypassed": false,
+        "tamper": false,
+        "lowBattery": false
+      }
+    ]
+  },
+  "sanitizedFields": {
+    "cookie": "omitted",
+    "host": "omitted",
+    "password": "omitted"
+  }
+}

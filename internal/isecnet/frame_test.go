@@ -47,4 +47,7 @@ func TestEncodeDecodeFrame(t *testing.T) {
 	if frame.Dst != 0x0000 || frame.Src != 0x8fe0 {
 		t.Fatalf("unexpected ids dst=%#x src=%#x", frame.Dst, frame.Src)
 	}
+	if !bytes.Equal(frame.Raw, raw) {
+		t.Fatalf("raw frame = % x, want % x", frame.Raw, raw)
+	}
 }

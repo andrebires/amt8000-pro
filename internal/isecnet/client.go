@@ -32,9 +32,17 @@ func NewClient(host string, port int, password string, timeout time.Duration) *C
 }
 
 func (c *Client) GetStatus() (PanelStatus, error) {
-	conn, err := c.connectAndAuth()
+	capture, err := c.GetStatusCapture()
 	if err != nil {
 		return PanelStatus{}, err
+	}
+	return capture.Status, nil
+}
+
+func (c *Client) GetStatusCapture() (StatusCapture, error) {
+	conn, err := c.connectAndAuth()
+	if err != nil {
+		return StatusCapture{}, err
 	}
 	defer conn.Close()
 	defer func() {
@@ -42,16 +50,23 @@ func (c *Client) GetStatus() (PanelStatus, error) {
 	}()
 
 	if err := c.writeFrame(conn, cmdStatus, nil); err != nil {
-		return PanelStatus{}, err
+		return StatusCapture{}, err
 	}
 	frame, err := c.readFrame(conn)
 	if err != nil {
-		return PanelStatus{}, err
+		return StatusCapture{}, err
 	}
 	if len(frame.Payload) < 143 {
-		return PanelStatus{}, statusPayloadTooShortError(frame)
+		return StatusCapture{}, statusPayloadTooShortError(frame)
 	}
-	return parseStatus(frame.Payload)
+	status, err := parseStatus(frame.Payload)
+	if err != nil {
+		return StatusCapture{}, err
+	}
+	return StatusCapture{
+		Status: status,
+		Frame:  frame,
+	}, nil
 }
 
 func (c *Client) connectAndAuth() (net.Conn, error) {

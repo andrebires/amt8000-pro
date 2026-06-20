@@ -16,6 +16,7 @@ type Frame struct {
 	Src     uint16
 	Command uint16
 	Payload []byte
+	Raw     []byte `json:"-"`
 }
 
 func encodeFrame(command uint16, payload []byte) []byte {
@@ -51,6 +52,7 @@ func decodeFrame(data []byte) (Frame, error) {
 		Src:     binary.BigEndian.Uint16(data[2:4]),
 		Command: binary.BigEndian.Uint16(data[6:8]),
 		Payload: append([]byte(nil), data[8:8+payloadLen]...),
+		Raw:     append([]byte(nil), data[:expected]...),
 	}, nil
 }
 

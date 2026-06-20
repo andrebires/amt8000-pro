@@ -39,8 +39,8 @@ and a real-panel test report before it can be marked done.
 - [x] Local Ethernet connection to panel over TCP `9009`.
 - [x] Online dashboard shell.
 - [x] Basic status parsing for model, firmware version, partitions, zones, siren, tamper, and battery.
-- [ ] Record first successful real-panel status test.
-- [ ] Save sanitized status frame fixture from the real panel.
+- [x] Record first successful real-panel status test.
+- [x] Save sanitized status frame fixture from the real panel.
 
 ### M1 - Online Tab Parity
 
@@ -48,16 +48,16 @@ Manual basis: the Online tab supports arm/disarm, PGM control, computer-time syn
 zone and panel status, source/battery voltage, pending problems, model/version,
 clearing triggers, and temporary zone bypass.
 
-- [ ] `ONLINE-001` Add explicit safety checklist for live control testing.
-- [ ] `ONLINE-002` Implement full panel status refresh loop with connection timer.
-- [ ] `ONLINE-003` Display all zone states: open, closed, fired-open, fired-closed.
-- [ ] `ONLINE-004` Display partition state and siren/firing indicators.
-- [ ] `ONLINE-005` Display source voltage and battery voltage if exposed by AMT 8000 Pro status payloads.
-- [ ] `ONLINE-006` Display pending problems/troubles.
+- [x] `ONLINE-001` Add explicit safety checklist for live control testing.
+- [x] `ONLINE-002` Implement full panel status refresh loop with connection timer.
+- [x] `ONLINE-003` Display all zone states: open, closed, fired-open, fired-closed.
+- [x] `ONLINE-004` Display partition state and siren/firing indicators.
+- [blocked] `ONLINE-005` Display source voltage and battery voltage if exposed by AMT 8000 Pro status payloads. Current API/UI exposes nullable unsupported fields; payload offsets are not proven.
+- [x] `ONLINE-006` Display pending problems/troubles from known status evidence: panel tamper, panel battery level, zone tamper, and zone low battery.
 - [ ] `ONLINE-007` Implement arm/disarm commands with confirmation and production evidence.
-- [ ] `ONLINE-008` Implement PGM list/status read.
+- [blocked] `ONLINE-008` Implement PGM list/status read. Blocked by missing AMT 8000 Pro protocol evidence.
 - [ ] `ONLINE-009` Implement PGM activation/deactivation with confirmation.
-- [ ] `ONLINE-010` Implement panel date/time read.
+- [x] `ONLINE-010` Implement panel date/time read.
 - [ ] `ONLINE-011` Implement sync panel date/time from server time.
 - [ ] `ONLINE-012` Implement temporary zone bypass/un-bypass.
 - [ ] `ONLINE-013` Implement clear fired-zone/alarm memory command if supported.
