@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/andrebires/amt8000-pro/internal/isecnet"
 )
@@ -69,6 +71,46 @@ type failingEventsClient struct {
 
 func (failingEventsClient) GetEvents() (isecnet.PanelEvents, error) {
 	return isecnet.PanelEvents{}, errors.New("panel read failed")
+}
+
+type serializedClient struct {
+	mu        sync.Mutex
+	active    int
+	maxActive int
+}
+
+func (c *serializedClient) GetStatus() (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.GetStatus()
+}
+
+func (c *serializedClient) GetEvents() (isecnet.PanelEvents, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.GetEvents()
+}
+
+func (c *serializedClient) enter() {
+	c.mu.Lock()
+	c.active++
+	if c.active > c.maxActive {
+		c.maxActive = c.active
+	}
+	c.mu.Unlock()
+	time.Sleep(20 * time.Millisecond)
+}
+
+func (c *serializedClient) exit() {
+	c.mu.Lock()
+	c.active--
+	c.mu.Unlock()
+}
+
+func (c *serializedClient) max() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.maxActive
 }
 
 func TestStatusEndpoint(t *testing.T) {
@@ -140,6 +182,9 @@ func TestIndexRendersReadOnlyOnlineStatus(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "Receptor IP") {
 		t.Fatalf("events table should not show redundant Receptor IP column: %s", rec.Body.String())
 	}
+	if strings.Contains(rec.Body.String(), "updateEventExportLinks();\n    refreshEvents();") {
+		t.Fatalf("events should not auto-download on page load: %s", rec.Body.String())
+	}
 }
 
 func TestEventsEndpoint(t *testing.T) {
@@ -180,6 +225,36 @@ func TestEventsEndpointSortsNewestFirst(t *testing.T) {
 	older := strings.Index(body, `"code":"E130"`)
 	if newest < 0 || older < 0 || newest > older {
 		t.Fatalf("events are not newest first: %s", body)
+	}
+}
+
+func TestPanelCommandsAreSerializedPerConnection(t *testing.T) {
+	client := &serializedClient{}
+	server := NewServer(func(PanelConnection) PanelClient { return client })
+	handler := server.Routes()
+	conn := PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}
+	cookie := encodedTestCookie(t, conn)
+	paths := []string{"/api/status", "/api/events", "/api/status", "/api/events"}
+	var wg sync.WaitGroup
+
+	for _, path := range paths {
+		path := path
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Errorf("%s status = %d body=%s", path, rec.Code, rec.Body.String())
+			}
+		}()
+	}
+	wg.Wait()
+
+	if client.max() != 1 {
+		t.Fatalf("panel commands overlapped; max active = %d", client.max())
 	}
 }
 

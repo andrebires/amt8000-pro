@@ -12,8 +12,8 @@ Linux, celulares e tablets conectados na mesma rede local.
 - Login pelo navegador informando IP da central, porta e senha de acesso remoto.
 - Conexao local via Ethernet usando ISECNet v2 na porta TCP `9009`.
 - Painel web com status basico da central.
-- Aba de eventos com download da central, filtros e exportacao CSV/JSON; os
-  codigos ainda sao exibidos como bytes brutos ate o mapeamento completo.
+- Aba de eventos com download manual da central, filtros locais, exportacao
+  CSV/JSON e mapeamento dos codigos de evento ja observados.
 - Parser inicial para modelo, versao de firmware, particoes, setores, sirene,
   tamper e bateria.
 - Backlog de paridade com AMT Remoto e Programador AMT 8000 em
@@ -38,6 +38,15 @@ O formulario de login no navegador pede:
 
 As credenciais ficam em um cookie de sessao `HttpOnly` no navegador local e nao
 sao gravadas no repositorio.
+
+O servidor nao mantem uma sessao persistente com a central. Cada atualizacao de
+status, download de eventos ou exportacao abre uma nova conexao TCP, autentica,
+executa os comandos necessarios e desconecta. Se a central ficar indisponivel,
+a pagina continua logada e tenta reconectar no proximo comando; use `Log out`
+para limpar o cookie e voltar ao login.
+
+Comandos para a mesma central (`host:porta`) sao serializados no backend para
+evitar sessoes concorrentes contra o painel.
 
 Para mudar o endereco HTTP do servidor, copie `.env.example` para `.env`:
 

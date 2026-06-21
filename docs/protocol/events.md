@@ -11,9 +11,13 @@ event buffer.
 - UI filters: free text query, partition, and delivery status.
 - API/export filters also accept receptor-IP blocked state for diagnostics, but
   the web UI hides it until blocked/disabled behavior is proven.
+- Web UI behavior: event download is manual only. Filters apply to the last
+  downloaded set in the browser, so typing in filters does not re-query the
+  panel.
 - Real panel client behavior: reads event records with ISECNet command `0x3900`
-  in 16-index batches, parses index/timestamp/raw code bytes, maps observed
-  event descriptions, sorts by timestamp, and returns the latest 256 records.
+  in 16-index batches with a short pause between batches, parses
+  index/timestamp/raw code bytes, maps observed event descriptions, sorts by
+  timestamp, and returns the latest 256 records.
 
 ## Command
 
@@ -21,8 +25,8 @@ event buffer.
 - Request payload: 16 big-endian event indexes, 2 bytes each.
 - Response payload: 16 event records, 15 bytes each.
 - Observed buffer size: at least indexes `0..511`.
-- First implementation reads indexes `511..0`, filters invalid timestamps, sorts
-  by timestamp descending, and returns the latest `256`.
+- Current implementation reads indexes `511..0`, filters invalid timestamps,
+  sorts by timestamp descending, and returns the latest `256`.
 
 Example captured request payload for indexes `21..6`:
 
@@ -66,8 +70,10 @@ The API and UI expose these fields:
 - Expand the description table as new event families are observed.
 - Confirm whether bytes `10..14` include delivery status and receptor-IP
   blocked/disabled flags for reporting-specific events.
-- Investigate observed "Reset date and time" events during some panel
-  connections before adding any write-like behavior.
+- Investigate observed "Reset date and time" and "Restoration power grid
+  failure" events during event downloads before adding any write-like behavior.
+  The working theory is panel overload or watchdog reset during dense event
+  reads, so event fetches are manual and paced.
 
 ## Observed Description Mapping
 

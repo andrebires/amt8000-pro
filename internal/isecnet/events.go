@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"time"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 	eventBufferSize = 512
 	eventBatchSize  = 16
 	eventRecordSize = 15
+	eventBatchDelay = 200 * time.Millisecond
 	cmdEvents       = 0x3900
 )
 
@@ -57,6 +59,9 @@ func (c *Client) GetEventsCapture() (eventCapture, error) {
 		}
 		frames = append(frames, frame)
 		events = append(events, batchEvents...)
+		if start > 0 {
+			time.Sleep(eventBatchDelay)
+		}
 	}
 
 	return eventCapture{

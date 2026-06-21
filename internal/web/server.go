@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/andrebires/amt8000-pro/internal/isecnet"
 )
@@ -29,10 +31,15 @@ type ClientFactory func(PanelConnection) PanelClient
 
 type Server struct {
 	newClient ClientFactory
+	locksMu   sync.Mutex
+	locks     map[string]*sync.Mutex
 }
 
 func NewServer(newClient ClientFactory) *Server {
-	return &Server{newClient: newClient}
+	return &Server{
+		newClient: newClient,
+		locks:     make(map[string]*sync.Mutex),
+	}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -53,7 +60,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "login required", http.StatusUnauthorized)
 		return
 	}
-	status, err := s.newClient(conn).GetStatus()
+	status, err := s.getStatus(conn)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -68,7 +75,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	status, err := s.newClient(conn).GetStatus()
+	status, err := s.getStatus(conn)
 	data := struct {
 		Connection PanelConnection
 		Status     isecnet.PanelStatus
@@ -108,7 +115,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := s.newClient(conn).GetStatus()
+	status, err := s.getStatus(conn)
 	if err != nil {
 		renderLogin(w, loginPageData{Host: conn.Host, Port: conn.Port, Error: "Panel connection failed: " + err.Error()})
 		return
@@ -116,6 +123,32 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	setConnectionCookie(w, conn)
 	_ = status
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) getStatus(conn PanelConnection) (isecnet.PanelStatus, error) {
+	unlock := s.lockPanel(conn)
+	defer unlock()
+	return s.newClient(conn).GetStatus()
+}
+
+func (s *Server) getEvents(conn PanelConnection) (isecnet.PanelEvents, error) {
+	unlock := s.lockPanel(conn)
+	defer unlock()
+	return s.newClient(conn).GetEvents()
+}
+
+func (s *Server) lockPanel(conn PanelConnection) func() {
+	key := net.JoinHostPort(conn.Host, strconv.Itoa(conn.Port))
+	s.locksMu.Lock()
+	lock := s.locks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		s.locks[key] = lock
+	}
+	s.locksMu.Unlock()
+
+	lock.Lock()
+	return lock.Unlock
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +384,7 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     const eventsCSVLink = document.getElementById("events-csv-link");
     const eventsJSONLink = document.getElementById("events-json-link");
     const eventFilterInputs = ["event-filter-q", "event-filter-partition", "event-filter-delivery"].map((id) => document.getElementById(id)).filter(Boolean);
+    let downloadedEvents = null;
 
     function boolText(value) {
       return value ? "true" : "false";
@@ -442,6 +476,23 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
       eventsJSONLink?.classList.toggle("disabled", !enabled);
     }
 
+    function filteredDownloadedEvents() {
+      if (!downloadedEvents) return null;
+      const query = document.getElementById("event-filter-q")?.value.trim().toLowerCase();
+      const partition = document.getElementById("event-filter-partition")?.value.trim();
+      const delivery = document.getElementById("event-filter-delivery")?.value.trim().toLowerCase();
+      const rows = (downloadedEvents.events || []).filter((event) => {
+        if (query) {
+          const searchable = [event.index, event.timestamp, event.code, event.description, event.partition, event.zone, event.user, event.deliveryStatus, event.raw].join(" ").toLowerCase();
+          if (!searchable.includes(query)) return false;
+        }
+        if (partition && String(event.partition ?? "") !== partition) return false;
+        if (delivery && String(event.deliveryStatus || "").toLowerCase() !== delivery) return false;
+        return true;
+      });
+      return {...downloadedEvents, events: rows, total: rows.length};
+    }
+
     function renderEvents(events) {
       if (!eventsBody) return;
       const rows = events.events || [];
@@ -460,16 +511,16 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
       eventsButton.disabled = true;
       updateEventExportLinks();
       try {
-        const params = eventQueryParams();
-        const response = await fetch("/api/events" + (params.toString() ? "?" + params.toString() : ""), {headers: {"Accept": "application/json"}});
+        const response = await fetch("/api/events", {headers: {"Accept": "application/json"}});
         if (!response.ok) {
           const body = await response.json().catch(async () => ({error: await response.text()}));
           throw new Error(body.error || "event download failed");
         }
-        const events = await response.json();
-        renderEvents(events);
+        downloadedEvents = await response.json();
+        renderEvents(filteredDownloadedEvents());
         setEventExportsEnabled(true);
       } catch (error) {
+        downloadedEvents = null;
         if (eventsSummary) eventsSummary.textContent = String(error.message || error).trim();
         eventsBody.innerHTML = "<tr class=\"empty-row\"><td colspan=\"8\">Event download is unavailable.</td></tr>";
         setEventExportsEnabled(false);
@@ -488,12 +539,15 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
 
     refreshButton?.addEventListener("click", refreshStatus);
     eventsButton?.addEventListener("click", refreshEvents);
-    for (const input of eventFilterInputs) input.addEventListener("input", () => { updateEventExportLinks(); refreshEvents(); });
+    for (const input of eventFilterInputs) input.addEventListener("input", () => {
+      updateEventExportLinks();
+      const filtered = filteredDownloadedEvents();
+      if (filtered) renderEvents(filtered);
+    });
     setInterval(updateElapsed, 1000);
     setInterval(refreshStatus, 10000);
     updateElapsed();
     updateEventExportLinks();
-    refreshEvents();
   </script>
 </body>
 </html>`))

@@ -24,7 +24,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "LOGIN_REQUIRED", "login required")
 		return
 	}
-	events, err := s.newClient(conn).GetEvents()
+	events, err := s.getEvents(conn)
 	if err != nil {
 		writeEventsError(w, err)
 		return
@@ -39,7 +39,7 @@ func (s *Server) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, "LOGIN_REQUIRED", "login required")
 		return
 	}
-	events, err := s.newClient(conn).GetEvents()
+	events, err := s.getEvents(conn)
 	if err != nil {
 		writeEventsError(w, err)
 		return
