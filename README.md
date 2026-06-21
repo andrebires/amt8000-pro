@@ -46,7 +46,9 @@ a pagina continua logada e tenta reconectar no proximo comando; use `Log out`
 para limpar o cookie e voltar ao login.
 
 Comandos para a mesma central (`host:porta`) sao serializados no backend para
-evitar sessoes concorrentes contra o painel.
+evitar sessoes concorrentes contra o painel. Testes com painel real indicam que
+a central se comporta como dispositivo de uma sessao remota autenticada ativa;
+detalhes estao em `docs/protocol/session-behavior.md`.
 
 Para mudar o endereco HTTP do servidor, copie `.env.example` para `.env`:
 

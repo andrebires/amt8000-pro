@@ -18,6 +18,8 @@ event buffer.
   in 16-index batches with a short pause between batches, parses
   index/timestamp/raw code bytes, maps observed event descriptions, sorts by
   timestamp, and returns the latest 256 records.
+- Session/concurrency behavior is documented in
+  `docs/protocol/session-behavior.md`.
 
 ## Command
 
