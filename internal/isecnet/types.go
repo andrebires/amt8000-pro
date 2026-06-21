@@ -43,6 +43,26 @@ type Trouble struct {
 	Zone    int    `json:"zone,omitempty"`
 }
 
+type PanelEvents struct {
+	Events []PanelEvent `json:"events"`
+	Limit  int          `json:"limit"`
+	Total  int          `json:"total"`
+}
+
+type PanelEvent struct {
+	Index              int    `json:"index"`
+	Timestamp          string `json:"timestamp,omitempty"`
+	Code               string `json:"code"`
+	Description        string `json:"description,omitempty"`
+	Partition          *int   `json:"partition,omitempty"`
+	Zone               *int   `json:"zone,omitempty"`
+	User               *int   `json:"user,omitempty"`
+	DeliveryStatus     string `json:"deliveryStatus,omitempty"`
+	ReceptorIPBlocked  bool   `json:"receptorIpBlocked,omitempty"`
+	ReceptorIPDisabled bool   `json:"receptorIpDisabled,omitempty"`
+	Raw                string `json:"raw,omitempty"`
+}
+
 type StatusCapture struct {
 	Status PanelStatus `json:"status"`
 	Frame  Frame       `json:"-"`

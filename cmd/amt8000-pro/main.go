@@ -13,7 +13,7 @@ import (
 
 func main() {
 	cfg := panel.ConfigFromEnv()
-	server := web.NewServer(func(conn web.PanelConnection) web.StatusClient {
+	server := web.NewServer(func(conn web.PanelConnection) web.PanelClient {
 		return isecnet.NewClient(conn.Host, conn.Port, conn.Password, 5*time.Second)
 	})
 

@@ -20,11 +20,12 @@ type PanelConnection struct {
 	Password string `json:"password"`
 }
 
-type StatusClient interface {
+type PanelClient interface {
 	GetStatus() (isecnet.PanelStatus, error)
+	GetEvents() (isecnet.PanelEvents, error)
 }
 
-type ClientFactory func(PanelConnection) StatusClient
+type ClientFactory func(PanelConnection) PanelClient
 
 type Server struct {
 	newClient ClientFactory
@@ -41,6 +42,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /login", s.handleLoginPost)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/events", s.handleEvents)
+	mux.HandleFunc("GET /api/events/export", s.handleEventsExport)
 	return mux
 }
 
@@ -220,11 +223,21 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     .section-grid { display:grid; grid-template-columns: minmax(0, 1fr); gap:12px; }
     .trouble-list { margin:0; padding-left:18px; }
     .pill { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border:1px solid var(--line); border-radius:999px; font-size:12px; font-weight:700; }
+    .event-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+    .event-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .filters { display:grid; grid-template-columns: minmax(180px, 2fr) repeat(2, minmax(120px, 1fr)); gap:10px; margin:12px 0; }
+    .filters label { display:grid; gap:4px; color:var(--muted); font-size:12px; font-weight:700; }
+    input, select { min-height:36px; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; background:transparent; color:inherit; }
+    .table-wrap { overflow-x:auto; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
     th { color: var(--muted); font-weight: 600; }
     .error { border-color: var(--warn); color: var(--warn); }
     button { min-height:36px; border:1px solid var(--line); border-radius:6px; padding:6px 12px; font:inherit; font-weight:700; background:transparent; color:inherit; cursor:pointer; }
+    a.button { display:inline-flex; align-items:center; min-height:36px; border:1px solid var(--line); border-radius:6px; padding:6px 12px; color:inherit; text-decoration:none; font-weight:700; }
+    button:disabled, a.disabled { opacity:.55; cursor:not-allowed; pointer-events:none; }
+    .empty-row td { color:var(--muted); }
+    @media (max-width: 760px) { .filters { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -284,6 +297,45 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
             {{range .Status.Troubles}}<li>{{.Message}}{{if .Zone}} - Zone {{.Zone}}{{end}}</li>{{else}}<li class="muted">No known derived problems.</li>{{end}}
           </ul>
         </section>
+        <section class="card">
+          <div class="event-heading">
+            <div>
+              <h2>Events</h2>
+              <div class="muted" id="events-summary">Latest 256 panel events, newest first</div>
+            </div>
+            <div class="event-actions">
+              <button type="button" id="events-refresh-button">Download</button>
+              <a class="button" id="events-csv-link" href="/api/events/export?format=csv">CSV</a>
+              <a class="button" id="events-json-link" href="/api/events/export?format=json">JSON</a>
+            </div>
+          </div>
+          <div class="filters">
+            <label>Search
+              <input id="event-filter-q" type="search" autocomplete="off">
+            </label>
+            <label>Partition
+              <input id="event-filter-partition" type="number" min="0" max="16" inputmode="numeric">
+            </label>
+            <label>Delivery
+              <select id="event-filter-delivery">
+                <option value="">Any</option>
+                <option value="sent">Sent</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+                <option value="blocked">Blocked</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Time</th><th>Code</th><th>Description</th><th>Partition</th><th>Zone</th><th>User</th><th>Delivery</th></tr></thead>
+              <tbody id="events">
+                <tr class="empty-row"><td colspan="8">Events have not been downloaded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     {{end}}
   </main>
@@ -293,6 +345,12 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     const refreshEl = document.getElementById("last-refresh");
     const errorEl = document.getElementById("refresh-error");
     const refreshButton = document.getElementById("refresh-button");
+    const eventsButton = document.getElementById("events-refresh-button");
+    const eventsSummary = document.getElementById("events-summary");
+    const eventsBody = document.getElementById("events");
+    const eventsCSVLink = document.getElementById("events-csv-link");
+    const eventsJSONLink = document.getElementById("events-json-link");
+    const eventFilterInputs = ["event-filter-q", "event-filter-partition", "event-filter-delivery"].map((id) => document.getElementById(id)).filter(Boolean);
 
     function boolText(value) {
       return value ? "true" : "false";
@@ -305,6 +363,10 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     function setText(id, value) {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
+    }
+
+    function escapeHTML(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
     }
 
     function renderStatus(status) {
@@ -356,6 +418,66 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
       }
     }
 
+    function eventQueryParams() {
+      const params = new URLSearchParams();
+      const q = document.getElementById("event-filter-q")?.value.trim();
+      const partition = document.getElementById("event-filter-partition")?.value.trim();
+      const delivery = document.getElementById("event-filter-delivery")?.value.trim();
+      if (q) params.set("q", q);
+      if (partition) params.set("partition", partition);
+      if (delivery) params.set("delivery", delivery);
+      return params;
+    }
+
+    function updateEventExportLinks() {
+      const params = eventQueryParams();
+      params.set("format", "csv");
+      if (eventsCSVLink) eventsCSVLink.href = "/api/events/export?" + params.toString();
+      params.set("format", "json");
+      if (eventsJSONLink) eventsJSONLink.href = "/api/events/export?" + params.toString();
+    }
+
+    function setEventExportsEnabled(enabled) {
+      eventsCSVLink?.classList.toggle("disabled", !enabled);
+      eventsJSONLink?.classList.toggle("disabled", !enabled);
+    }
+
+    function renderEvents(events) {
+      if (!eventsBody) return;
+      const rows = events.events || [];
+      if (eventsSummary) eventsSummary.textContent = rows.length + " of " + (events.limit || 256) + " events, newest first";
+      if (rows.length === 0) {
+        eventsBody.innerHTML = "<tr class=\"empty-row\"><td colspan=\"8\">No events match the current filters.</td></tr>";
+        return;
+      }
+      eventsBody.innerHTML = rows.map((event) => {
+        return "<tr><td>" + event.index + "</td><td>" + escapeHTML(event.timestamp || "") + "</td><td><span class=\"pill\">" + escapeHTML(event.code) + "</span></td><td>" + escapeHTML(event.description || "") + "</td><td>" + escapeHTML(event.partition ?? "") + "</td><td>" + escapeHTML(event.zone ?? "") + "</td><td>" + escapeHTML(event.user ?? "") + "</td><td>" + escapeHTML(event.deliveryStatus || "") + "</td></tr>";
+      }).join("");
+    }
+
+    async function refreshEvents() {
+      if (!eventsButton || !eventsBody) return;
+      eventsButton.disabled = true;
+      updateEventExportLinks();
+      try {
+        const params = eventQueryParams();
+        const response = await fetch("/api/events" + (params.toString() ? "?" + params.toString() : ""), {headers: {"Accept": "application/json"}});
+        if (!response.ok) {
+          const body = await response.json().catch(async () => ({error: await response.text()}));
+          throw new Error(body.error || "event download failed");
+        }
+        const events = await response.json();
+        renderEvents(events);
+        setEventExportsEnabled(true);
+      } catch (error) {
+        if (eventsSummary) eventsSummary.textContent = String(error.message || error).trim();
+        eventsBody.innerHTML = "<tr class=\"empty-row\"><td colspan=\"8\">Event download is unavailable.</td></tr>";
+        setEventExportsEnabled(false);
+      } finally {
+        eventsButton.disabled = false;
+      }
+    }
+
     function updateElapsed() {
       if (!elapsedEl) return;
       const total = Math.floor((Date.now() - startedAt) / 1000);
@@ -365,9 +487,13 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     }
 
     refreshButton?.addEventListener("click", refreshStatus);
+    eventsButton?.addEventListener("click", refreshEvents);
+    for (const input of eventFilterInputs) input.addEventListener("input", () => { updateEventExportLinks(); refreshEvents(); });
     setInterval(updateElapsed, 1000);
     setInterval(refreshStatus, 10000);
     updateElapsed();
+    updateEventExportLinks();
+    refreshEvents();
   </script>
 </body>
 </html>`))

@@ -35,6 +35,7 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 ## Phase 3 - Programming Discovery
 
 - [ ] Run AMT Remoto Desktop in a Windows PC/VM on the LAN.
+- [x] Add a redacting TCP proxy for local-IP programming/event capture.
 - [ ] Capture local-IP programming sessions to TCP `9009`.
 - [ ] Map read commands for high-priority programming categories.
 - [ ] Map write commands only after read behavior is understood.
@@ -55,7 +56,9 @@ Detailed backlog: `docs/backlog/amt-remoto-parity.md`.
 - [~] Implement Online tab parity: richer read-only status is implemented; arm/disarm, PGM, clock sync, bypass, and clear alarm memory remain evidence-gated.
 - [ ] Implement LAN device discovery and saved panel profiles.
 - [ ] Decide and implement local users/roles/audit if needed for multi-device LAN access.
-- [ ] Implement read-only event download and export.
+- [~] Implement read-only event download and export: event download, API/UI,
+  export, and observed description mapping are in place; receptor-IP status
+  field mapping remains.
 - [ ] Implement full configuration download and immutable snapshots.
 - [ ] Map Programador AMT 8000 configuration sections: Geral, Usuarios, Setores, Comunicacao, Monitoramento IP, Ethernet/WiFi, GPRS, Auto-ativacao, Dispositivos, Eventos monitoramento, and Eventos Push.
 - [ ] Implement configuration editing only after protocol evidence and backup/read-after-write safety gates.

@@ -12,6 +12,8 @@ Linux, celulares e tablets conectados na mesma rede local.
 - Login pelo navegador informando IP da central, porta e senha de acesso remoto.
 - Conexao local via Ethernet usando ISECNet v2 na porta TCP `9009`.
 - Painel web com status basico da central.
+- Aba de eventos com download da central, filtros e exportacao CSV/JSON; os
+  codigos ainda sao exibidos como bytes brutos ate o mapeamento completo.
 - Parser inicial para modelo, versao de firmware, particoes, setores, sirene,
   tamper e bateria.
 - Backlog de paridade com AMT Remoto e Programador AMT 8000 em
@@ -81,6 +83,16 @@ Para gerar somente a fixture JSON do status:
 ```sh
 AMT_HOST=192.168.1.50 AMT_PASSWORD=123456 go run ./cmd/amt8000-status-capture
 ```
+
+Para descobrir comandos ainda nao mapeados usando AMT Remoto ou Programador AMT
+8000, rode o proxy de captura e aponte o aplicativo oficial para o endereco do
+proxy:
+
+```sh
+AMT_HOST=192.168.1.50 AMT_PROXY_ADDR=0.0.0.0:19009 go run ./cmd/amt8000-capture-proxy
+```
+
+Detalhes em `docs/protocol/capture-proxy.md`.
 
 ## Politica de seguranca
 

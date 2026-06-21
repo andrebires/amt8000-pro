@@ -175,14 +175,21 @@ Manual basis: AMT Remoto can download and save the latest 256 events, and marks
 events disabled/blocked for receptor-IP sending. Programador AMT 8000 exposes a
 buffer de eventos view from the main menu.
 
-- [ ] `EVT-001` Capture event download command and response format.
-- [ ] `EVT-002` Implement download of latest panel events.
-- [ ] `EVT-003` Parse event timestamp, code, partition, zone/user, and delivery status if present.
-- [ ] `EVT-004` Display last 256 events with filters.
-- [ ] `EVT-005` Mark events blocked/disabled for receptor-IP sending if protocol exposes it.
-- [ ] `EVT-006` Export events as CSV.
-- [ ] `EVT-007` Export events as JSON.
-- [ ] `EVT-008` Add real-panel test report for event download/export.
+- [x] `EVT-001` Capture event download command and response format.
+- [x] `EVT-002` Implement download of latest panel events.
+- [~] `EVT-003` Parse event timestamp, code, partition, zone/user, and delivery status if present.
+  Timestamp, index, raw code bytes, raw record, and observed description,
+  partition, zone, and user fields are parsed. Receptor delivery status remains
+  evidence-gated, except observed failure-to-report events.
+- [x] `EVT-004` Display last 256 events with filters.
+- [~] `EVT-005` Mark events blocked/disabled for receptor-IP sending if protocol exposes it.
+  The API/export fields exist, but the redundant web UI column is hidden until
+  blocked/disabled protocol evidence can populate it.
+- [x] `EVT-006` Export events as CSV.
+- [x] `EVT-007` Export events as JSON.
+- [~] `EVT-008` Add real-panel test report for event download/export. Capture
+  evidence exists under `/tmp/amt8000-captures/`; add a sanitized committed
+  report after confirming no sensitive fields remain.
 
 ### M8 - AMT Remoto Transport Parity
 
@@ -212,7 +219,7 @@ version information.
 
 ## Protocol Discovery Backlog
 
-- [ ] `PROTO-001` Build a packet-capture checklist for AMT Remoto Desktop over Ethernet.
+- [x] `PROTO-001` Build a packet-capture checklist for AMT Remoto Desktop over Ethernet.
 - [ ] `PROTO-002` Set up a Windows VM/PC on the same LAN as the panel.
 - [ ] `PROTO-003` Capture connect/auth/disconnect session.
 - [ ] `PROTO-004` Capture Online status refresh session.

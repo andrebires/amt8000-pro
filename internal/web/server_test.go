@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,8 +31,48 @@ func (fakeClient) GetStatus() (isecnet.PanelStatus, error) {
 	}, nil
 }
 
+func (fakeClient) GetEvents() (isecnet.PanelEvents, error) {
+	partitionOne := 1
+	zoneTwo := 2
+	userThree := 3
+	return isecnet.PanelEvents{
+		Limit: isecnet.EventLimit,
+		Total: 2,
+		Events: []isecnet.PanelEvent{
+			{
+				Index:          1,
+				Timestamp:      "2026-06-20T19:20:00",
+				Code:           "E130",
+				Description:    "Zone alarm",
+				Partition:      &partitionOne,
+				Zone:           &zoneTwo,
+				DeliveryStatus: "sent",
+			},
+			{
+				Index:              2,
+				Timestamp:          "2026-06-20T19:21:00",
+				Code:               "R401",
+				Description:        "User disarm",
+				Partition:          &partitionOne,
+				User:               &userThree,
+				DeliveryStatus:     "blocked",
+				ReceptorIPBlocked:  true,
+				ReceptorIPDisabled: true,
+			},
+		},
+	}, nil
+}
+
+type failingEventsClient struct {
+	fakeClient
+}
+
+func (failingEventsClient) GetEvents() (isecnet.PanelEvents, error) {
+	return isecnet.PanelEvents{}, errors.New("panel read failed")
+}
+
 func TestStatusEndpoint(t *testing.T) {
-	server := NewServer(func(PanelConnection) StatusClient { return fakeClient{} })
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 	setConnectionCookie(httptest.NewRecorder(), PanelConnection{})
 	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
@@ -51,7 +92,7 @@ func TestStatusEndpoint(t *testing.T) {
 }
 
 func TestIndexRedirectsToLoginWithoutConnection(t *testing.T) {
-	server := NewServer(func(PanelConnection) StatusClient { return fakeClient{} })
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
@@ -66,7 +107,7 @@ func TestIndexRedirectsToLoginWithoutConnection(t *testing.T) {
 }
 
 func TestLoginPage(t *testing.T) {
-	server := NewServer(func(PanelConnection) StatusClient { return fakeClient{} })
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
 
@@ -81,7 +122,7 @@ func TestLoginPage(t *testing.T) {
 }
 
 func TestIndexRendersReadOnlyOnlineStatus(t *testing.T) {
-	server := NewServer(func(PanelConnection) StatusClient { return fakeClient{} })
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
 	rec := httptest.NewRecorder()
@@ -91,10 +132,109 @@ func TestIndexRendersReadOnlyOnlineStatus(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	for _, want := range []string{"Connection elapsed", "Last refresh", "Panel Clock", "2026-06-20T19:15:21", "Pending Problems", "Zone battery is low", "OPEN"} {
+	for _, want := range []string{"Connection elapsed", "Last refresh", "Panel Clock", "2026-06-20T19:15:21", "Pending Problems", "Events", "CSV", "JSON", "Zone battery is low", "OPEN"} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
 		}
+	}
+	if strings.Contains(rec.Body.String(), "Receptor IP") {
+		t.Fatalf("events table should not show redundant Receptor IP column: %s", rec.Body.String())
+	}
+}
+
+func TestEventsEndpoint(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
+	req := httptest.NewRequest(http.MethodGet, "/api/events?blocked=true", nil)
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"total":1`, `"code":"R401"`, `"receptorIpBlocked":true`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body does not contain %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, `"code":"E130"`) {
+		t.Fatalf("filtered event leaked into body: %s", body)
+	}
+}
+
+func TestEventsEndpointSortsNewestFirst(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
+	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	newest := strings.Index(body, `"code":"R401"`)
+	older := strings.Index(body, `"code":"E130"`)
+	if newest < 0 || older < 0 || newest > older {
+		t.Fatalf("events are not newest first: %s", body)
+	}
+}
+
+func TestEventsEndpointReportsDownloadFailure(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return failingEventsClient{} })
+	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "EVENT_DOWNLOAD_FAILED") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestEventsCSVExport(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
+	req := httptest.NewRequest(http.MethodGet, "/api/events/export?format=csv&q=zone", nil)
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/csv") {
+		t.Fatalf("Content-Type = %q, want text/csv", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"index,timestamp,code,description,partition,zone,user,delivery_status,receptor_ip_blocked,receptor_ip_disabled,raw", "1,2026-06-20T19:20:00,E130,Zone alarm,1,2,,sent,false,false,"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body does not contain %q: %s", want, body)
+		}
+	}
+}
+
+func TestEventsJSONExport(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} })
+	req := httptest.NewRequest(http.MethodGet, "/api/events/export?format=json&delivery=sent", nil)
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"code":"E130"`) || strings.Contains(body, `"code":"R401"`) {
+		t.Fatalf("unexpected body: %s", body)
 	}
 }
 
