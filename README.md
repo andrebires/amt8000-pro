@@ -14,6 +14,9 @@ Linux, celulares e tablets conectados na mesma rede local.
 - Painel web com status basico da central.
 - Aba de eventos com download manual da central, filtros locais, exportacao
   CSV/JSON e mapeamento dos codigos de evento ja observados.
+- Endpoints e auditoria local para comandos Online, com arme/desarme da
+  particao `0` e bypass temporario de setores implementados a partir de
+  captura real da AMT 8000 Pro.
 - Parser inicial para modelo, versao de firmware, particoes, setores, sirene,
   tamper e bateria.
 - Backlog de paridade com AMT Remoto e Programador AMT 8000 em
@@ -54,7 +57,11 @@ Para mudar o endereco HTTP do servidor, copie `.env.example` para `.env`:
 
 ```sh
 AMT_HTTP_ADDR=:8080
+AMT_AUDIT_PATH=
 ```
+
+`AMT_AUDIT_PATH` e opcional. Quando omitido, tentativas de comandos Online sao
+auditadas no diretorio de configuracao do usuario local, fora do repositorio.
 
 Nao commite arquivos `.env`, senhas, capturas de pacote ou dados reais da sua
 instalacao.

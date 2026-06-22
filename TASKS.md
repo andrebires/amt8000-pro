@@ -27,8 +27,8 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 ## Phase 2 - Safe Control
 
 - [x] Add explicit safety checklist for arm/disarm.
-- [ ] Implement arm/disarm protocol methods.
-- [ ] Add dashboard controls with confirmation.
+- [~] Implement arm/disarm protocol methods; partition 0 away arm/disarm is implemented, other variants remain evidence-gated.
+- [~] Add dashboard controls with confirmation; partition 0 arm/disarm and zone bypass are enabled, other controls remain disabled until command captures exist.
 - [ ] Test arm/disarm against local panel.
 - [ ] Record production evidence under `docs/test-runs/`.
 
@@ -53,7 +53,7 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 Detailed backlog: `docs/backlog/amt-remoto-parity.md`.
 
 - [x] Finish current read-only LAN console evidence and sanitized fixtures.
-- [~] Implement Online tab parity: richer read-only status is implemented; arm/disarm, PGM, clock sync, bypass, and clear alarm memory remain evidence-gated.
+- [~] Implement Online tab parity: richer read-only status, guarded command endpoints, audit logging, partition 0 arm/disarm, and zone bypass are implemented; PGM, clock sync, and clear alarm memory remain evidence-gated.
 - [ ] Implement LAN device discovery and saved panel profiles.
 - [ ] Decide and implement local users/roles/audit if needed for multi-device LAN access.
 - [~] Implement read-only event download and export: event download, API/UI,

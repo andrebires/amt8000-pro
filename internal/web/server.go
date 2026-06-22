@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/andrebires/amt8000-pro/internal/isecnet"
 )
@@ -25,20 +26,53 @@ type PanelConnection struct {
 type PanelClient interface {
 	GetStatus() (isecnet.PanelStatus, error)
 	GetEvents() (isecnet.PanelEvents, error)
+	ArmPartition(partition int, mode string) (isecnet.PanelStatus, error)
+	DisarmPartition(partition int) (isecnet.PanelStatus, error)
+	SetPanelDateTime(value time.Time) (isecnet.PanelStatus, error)
+	SetZoneBypass(zone int, bypassed bool) (isecnet.PanelStatus, error)
+	ClearAlarmMemory() (isecnet.PanelStatus, error)
+	SetPGM(pgm int, active bool) (isecnet.PanelStatus, error)
 }
 
 type ClientFactory func(PanelConnection) PanelClient
+type ServerOption func(*Server)
 
 type Server struct {
 	newClient ClientFactory
+	auditSink AuditSink
 	locksMu   sync.Mutex
 	locks     map[string]*sync.Mutex
 }
 
-func NewServer(newClient ClientFactory) *Server {
-	return &Server{
+func NewServer(newClient ClientFactory, options ...ServerOption) *Server {
+	server := &Server{
 		newClient: newClient,
+		auditSink: NewJSONLAuditSink(defaultAuditPath()),
 		locks:     make(map[string]*sync.Mutex),
+	}
+	for _, option := range options {
+		option(server)
+	}
+	return server
+}
+
+func WithAuditPath(path string) ServerOption {
+	return func(s *Server) {
+		if strings.TrimSpace(path) == "" {
+			s.auditSink = noopAuditSink{}
+			return
+		}
+		s.auditSink = NewJSONLAuditSink(path)
+	}
+}
+
+func WithAuditSink(sink AuditSink) ServerOption {
+	return func(s *Server) {
+		if sink == nil {
+			s.auditSink = noopAuditSink{}
+			return
+		}
+		s.auditSink = sink
 	}
 }
 
@@ -51,6 +85,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("GET /api/events/export", s.handleEventsExport)
+	mux.HandleFunc("POST /api/online/partitions/{partition}/arm", s.handleArmPartition)
+	mux.HandleFunc("POST /api/online/partitions/{partition}/disarm", s.handleDisarmPartition)
+	mux.HandleFunc("POST /api/online/clock/sync", s.handleClockSync)
+	mux.HandleFunc("POST /api/online/zones/{zone}/bypass", s.handleZoneBypass)
+	mux.HandleFunc("POST /api/online/alarm-memory/clear", s.handleClearAlarmMemory)
+	mux.HandleFunc("POST /api/online/pgms/{pgm}", s.handlePGM)
 	return mux
 }
 
@@ -258,6 +298,10 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     .pill { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border:1px solid var(--line); border-radius:999px; font-size:12px; font-weight:700; }
     .event-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
     .event-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .blocked-note { margin-top:10px; font-size:13px; color:var(--muted); }
+    .command-status { margin-top:10px; min-height:20px; font-size:13px; }
+    .inline-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .inline-actions button { min-height:30px; padding:4px 10px; }
     .filters { display:grid; grid-template-columns: minmax(180px, 2fr) repeat(2, minmax(120px, 1fr)); gap:10px; margin:12px 0; }
     .filters label { display:grid; gap:4px; color:var(--muted); font-size:12px; font-weight:700; }
     input, select { min-height:36px; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; background:transparent; color:inherit; }
@@ -305,24 +349,46 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
         <div class="card"><h2>Siren</h2><div class="metric {{if .Status.SirenLive}}bad{{else}}ok{{end}}" id="siren">{{if .Status.SirenLive}}Live{{else}}Quiet{{end}}</div></div>
         <div class="card"><h2>Troubles</h2><div class="metric" id="trouble-count">{{len .Status.Troubles}}</div><div class="muted">Known derived problems</div></div>
       </section>
+      <section class="card">
+        <h2>Command Status</h2>
+        <div class="command-status" id="online-command-status">No command sent in this browser session.</div>
+        <div class="blocked-note">Partition 0 arm/disarm and temporary zone bypass are enabled from captured protocol evidence.</div>
+      </section>
       <div class="section-grid">
         <section class="card">
           <h2>Partitions</h2>
           <table>
-            <thead><tr><th>#</th><th>State</th><th>Armed</th><th>Stay</th><th>Fired</th><th>Firing</th></tr></thead>
+            <thead><tr><th>#</th><th>State</th><th>Armed</th><th>Stay</th><th>Fired</th><th>Firing</th><th>Actions</th></tr></thead>
             <tbody id="partitions">
-              {{range .Status.Partitions}}<tr><td>{{.Index}}</td><td><span class="pill">{{.State}}</span></td><td>{{.Armed}}</td><td>{{.Stay}}</td><td>{{.Fired}}</td><td>{{.Firing}}</td></tr>{{end}}
+              {{range .Status.Partitions}}<tr><td>{{.Index}}</td><td><span class="pill">{{.State}}</span></td><td>{{.Armed}}</td><td>{{.Stay}}</td><td>{{.Fired}}</td><td>{{.Firing}}</td><td><div class="inline-actions">{{if .Armed}}<button type="button" data-partition-action="disarm" data-partition="{{.Index}}" {{if ne .Index 0}}disabled title="Only partition 0 is proven"{{end}}>Disarm</button>{{else}}<button type="button" data-partition-action="arm" data-partition="{{.Index}}" {{if ne .Index 0}}disabled title="Only partition 0 is proven"{{end}}>Arm</button>{{end}}</div></td></tr>{{end}}
             </tbody>
           </table>
         </section>
         <section class="card">
           <h2>Zones</h2>
           <table>
-            <thead><tr><th>#</th><th>State</th><th>Open</th><th>Fired</th><th>Bypassed</th><th>Tamper</th><th>Low Battery</th></tr></thead>
+            <thead><tr><th>#</th><th>Name</th><th>State</th><th>Open</th><th>Fired</th><th>Bypassed</th><th>Tamper</th><th>Low Battery</th><th>Actions</th></tr></thead>
             <tbody id="zones">
-              {{range .Status.Zones}}<tr><td>{{.Index}}</td><td><span class="pill">{{.State}}</span></td><td>{{.Open}}</td><td>{{.Violated}}</td><td>{{.Bypassed}}</td><td>{{.Tamper}}</td><td>{{.LowBattery}}</td></tr>{{end}}
+              {{range .Status.Zones}}<tr><td>{{.Index}}</td><td>{{if .Name}}{{.Name}}{{else}}<span class="muted">unknown</span>{{end}}</td><td><span class="pill">{{.State}}</span></td><td>{{.Open}}</td><td>{{.Violated}}</td><td>{{.Bypassed}}</td><td>{{.Tamper}}</td><td>{{.LowBattery}}</td><td><div class="inline-actions">{{if .Bypassed}}<button type="button" data-zone-action="unbypass" data-zone="{{.Index}}">Un-bypass</button>{{else}}<button type="button" data-zone-action="bypass" data-zone="{{.Index}}">Bypass</button>{{end}}</div></td></tr>{{end}}
             </tbody>
           </table>
+        </section>
+        <section class="card">
+          <h2>PGM</h2>
+          <table>
+            <thead><tr><th>#</th><th>Status</th><th>Evidence</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><span class="pill">UNKNOWN</span></td><td class="muted">Official app reported PGM not accessible.</td><td><div class="inline-actions"><button type="button" disabled title="PGM not accessible in captured evidence">Activate</button><button type="button" disabled title="PGM not accessible in captured evidence">Deactivate</button></div></td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="card">
+          <h2>Panel Commands</h2>
+          <div class="inline-actions">
+            <button type="button" disabled title="Protocol evidence required">Sync Clock</button>
+            <button type="button" disabled title="Protocol evidence required">Clear Memory</button>
+          </div>
+          <div class="blocked-note">Clock sync and alarm-memory clear remain disabled until protocol evidence is captured.</div>
         </section>
         <section class="card">
           <h2>Pending Problems</h2>
@@ -379,6 +445,9 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     const errorEl = document.getElementById("refresh-error");
     const refreshButton = document.getElementById("refresh-button");
     const eventsButton = document.getElementById("events-refresh-button");
+    const onlineCommandStatus = document.getElementById("online-command-status");
+    const partitionsBody = document.getElementById("partitions");
+    const zonesBody = document.getElementById("zones");
     const eventsSummary = document.getElementById("events-summary");
     const eventsBody = document.getElementById("events");
     const eventsCSVLink = document.getElementById("events-csv-link");
@@ -418,12 +487,22 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
 
       const partitions = document.getElementById("partitions");
       if (partitions) {
-        partitions.innerHTML = (status.partitions || []).map((partition) => "<tr><td>" + partition.index + "</td><td><span class=\"pill\">" + partition.state + "</span></td><td>" + boolText(partition.armed) + "</td><td>" + boolText(partition.stay) + "</td><td>" + boolText(partition.fired) + "</td><td>" + boolText(partition.firing) + "</td></tr>").join("");
+        partitions.innerHTML = (status.partitions || []).map((partition) => {
+          const disabled = Number(partition.index) === 0 ? "" : " disabled title=\"Only partition 0 is proven\"";
+          const action = partition.armed ? "disarm" : "arm";
+          const label = partition.armed ? "Disarm" : "Arm";
+          return "<tr><td>" + partition.index + "</td><td><span class=\"pill\">" + escapeHTML(partition.state) + "</span></td><td>" + boolText(partition.armed) + "</td><td>" + boolText(partition.stay) + "</td><td>" + boolText(partition.fired) + "</td><td>" + boolText(partition.firing) + "</td><td><div class=\"inline-actions\"><button type=\"button\" data-partition-action=\"" + action + "\" data-partition=\"" + partition.index + "\"" + disabled + ">" + label + "</button></div></td></tr>";
+        }).join("");
       }
 
       const zones = document.getElementById("zones");
       if (zones) {
-        zones.innerHTML = (status.zones || []).map((zone) => "<tr><td>" + zone.index + "</td><td><span class=\"pill\">" + zone.state + "</span></td><td>" + boolText(zone.open) + "</td><td>" + boolText(zone.violated) + "</td><td>" + boolText(zone.bypassed) + "</td><td>" + boolText(zone.tamper) + "</td><td>" + boolText(zone.lowBattery) + "</td></tr>").join("");
+        zones.innerHTML = (status.zones || []).map((zone) => {
+          const action = zone.bypassed ? "unbypass" : "bypass";
+          const label = zone.bypassed ? "Un-bypass" : "Bypass";
+          const name = zone.name ? escapeHTML(zone.name) : "<span class=\"muted\">unknown</span>";
+          return "<tr><td>" + zone.index + "</td><td>" + name + "</td><td><span class=\"pill\">" + escapeHTML(zone.state) + "</span></td><td>" + boolText(zone.open) + "</td><td>" + boolText(zone.violated) + "</td><td>" + boolText(zone.bypassed) + "</td><td>" + boolText(zone.tamper) + "</td><td>" + boolText(zone.lowBattery) + "</td><td><div class=\"inline-actions\"><button type=\"button\" data-zone-action=\"" + action + "\" data-zone=\"" + zone.index + "\">" + label + "</button></div></td></tr>";
+        }).join("");
       }
 
       const troubles = document.getElementById("troubles");
@@ -449,6 +528,62 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
         errorEl.textContent = "Refresh failed: " + String(error.message || error).trim();
       } finally {
         refreshButton.disabled = false;
+      }
+    }
+
+    async function runPartitionCommand(action, partition, button) {
+      const label = action === "arm" ? "arm partition " + partition : "disarm partition " + partition;
+      if (!window.confirm("Confirm " + label + "?")) return;
+      if (button) button.disabled = true;
+      if (onlineCommandStatus) onlineCommandStatus.textContent = "Sending " + label + "...";
+      try {
+        const response = await fetch("/api/online/partitions/" + encodeURIComponent(partition) + "/" + action, {
+          method: "POST",
+          headers: {"Accept": "application/json", "Content-Type": "application/json"},
+          body: JSON.stringify(action === "arm" ? {confirm: true, mode: "away"} : {confirm: true})
+        });
+        const body = await response.json().catch(async () => ({error: await response.text()}));
+        if (!response.ok || !body.ok) throw new Error(body.error || "command failed");
+        if (body.status) renderStatus(body.status);
+        if (onlineCommandStatus) {
+          onlineCommandStatus.textContent = "Command succeeded. Audit " + body.auditId + ".";
+          onlineCommandStatus.classList.remove("bad");
+        }
+      } catch (error) {
+        if (onlineCommandStatus) {
+          onlineCommandStatus.textContent = "Command failed: " + String(error.message || error).trim();
+          onlineCommandStatus.classList.add("bad");
+        }
+      } finally {
+        if (button) button.disabled = false;
+      }
+    }
+
+    async function runZoneBypass(zone, bypassed, button) {
+      const label = (bypassed ? "bypass" : "un-bypass") + " zone " + zone;
+      if (!window.confirm("Confirm " + label + "?")) return;
+      if (button) button.disabled = true;
+      if (onlineCommandStatus) onlineCommandStatus.textContent = "Sending " + label + "...";
+      try {
+        const response = await fetch("/api/online/zones/" + encodeURIComponent(zone) + "/bypass", {
+          method: "POST",
+          headers: {"Accept": "application/json", "Content-Type": "application/json"},
+          body: JSON.stringify({confirm: true, bypassed})
+        });
+        const body = await response.json().catch(async () => ({error: await response.text()}));
+        if (!response.ok || !body.ok) throw new Error(body.error || "command failed");
+        if (body.status) renderStatus(body.status);
+        if (onlineCommandStatus) {
+          onlineCommandStatus.textContent = "Command succeeded. Audit " + body.auditId + ".";
+          onlineCommandStatus.classList.remove("bad");
+        }
+      } catch (error) {
+        if (onlineCommandStatus) {
+          onlineCommandStatus.textContent = "Command failed: " + String(error.message || error).trim();
+          onlineCommandStatus.classList.add("bad");
+        }
+      } finally {
+        if (button) button.disabled = false;
       }
     }
 
@@ -539,6 +674,16 @@ var pageTemplate = template.Must(template.New("index").Parse(`<!doctype html>
 
     refreshButton?.addEventListener("click", refreshStatus);
     eventsButton?.addEventListener("click", refreshEvents);
+    partitionsBody?.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-partition-action]");
+      if (!button) return;
+      runPartitionCommand(button.dataset.partitionAction, button.dataset.partition || "0", button);
+    });
+    zonesBody?.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-zone-action]");
+      if (!button) return;
+      runZoneBypass(button.dataset.zone || "1", button.dataset.zoneAction === "bypass", button);
+    });
     for (const input of eventFilterInputs) input.addEventListener("input", () => {
       updateEventExportLinks();
       const filtered = filteredDownloadedEvents();

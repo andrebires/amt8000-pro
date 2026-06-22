@@ -6,12 +6,14 @@ import (
 )
 
 type Config struct {
-	HTTPAddr string
+	HTTPAddr  string
+	AuditPath string
 }
 
 func ConfigFromEnv() Config {
 	return Config{
-		HTTPAddr: getenv("AMT_HTTP_ADDR", ":8080"),
+		HTTPAddr:  getenv("AMT_HTTP_ADDR", ":8080"),
+		AuditPath: os.Getenv("AMT_AUDIT_PATH"),
 	}
 }
 

@@ -49,6 +49,10 @@ func (c *Client) GetStatusCapture() (StatusCapture, error) {
 		_ = c.writeFrame(conn, cmdDisconnect, nil)
 	}()
 
+	return c.readStatusOnConn(conn)
+}
+
+func (c *Client) readStatusOnConn(conn net.Conn) (StatusCapture, error) {
 	if err := c.writeFrame(conn, cmdStatus, nil); err != nil {
 		return StatusCapture{}, err
 	}
@@ -62,6 +66,9 @@ func (c *Client) GetStatusCapture() (StatusCapture, error) {
 	status, err := parseStatus(frame.Payload)
 	if err != nil {
 		return StatusCapture{}, err
+	}
+	if names, err := c.readZoneNamesOnConn(conn); err == nil {
+		status = applyZoneNames(status, names)
 	}
 	return StatusCapture{
 		Status: status,

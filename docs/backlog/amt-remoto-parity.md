@@ -54,15 +54,15 @@ clearing triggers, and temporary zone bypass.
 - [x] `ONLINE-004` Display partition state and siren/firing indicators.
 - [blocked] `ONLINE-005` Display source voltage and battery voltage if exposed by AMT 8000 Pro status payloads. Current API/UI exposes nullable unsupported fields; payload offsets are not proven.
 - [x] `ONLINE-006` Display pending problems/troubles from known status evidence: panel tamper, panel battery level, zone tamper, and zone low battery.
-- [ ] `ONLINE-007` Implement arm/disarm commands with confirmation and production evidence.
+- [~] `ONLINE-007` Implement arm/disarm commands with confirmation and production evidence. Partition `0` away arm and disarm are implemented from captured AMT 8000 Pro evidence; stay mode and nonzero partition variants remain evidence-gated.
 - [blocked] `ONLINE-008` Implement PGM list/status read. Blocked by missing AMT 8000 Pro protocol evidence.
-- [ ] `ONLINE-009` Implement PGM activation/deactivation with confirmation.
+- [blocked] `ONLINE-009` Implement PGM activation/deactivation with confirmation. Guarded API/audit scaffolding is present; command frames remain blocked by missing AMT 8000 Pro protocol evidence.
 - [x] `ONLINE-010` Implement panel date/time read.
-- [ ] `ONLINE-011` Implement sync panel date/time from server time.
-- [ ] `ONLINE-012` Implement temporary zone bypass/un-bypass.
-- [ ] `ONLINE-013` Implement clear fired-zone/alarm memory command if supported.
-- [ ] `ONLINE-014` Add API endpoints for each Online command with audit log entries.
-- [ ] `ONLINE-015` Add real-panel test reports for every Online command.
+- [blocked] `ONLINE-011` Implement sync panel date/time from server time. Guarded API/audit scaffolding is present; command frames remain blocked by missing AMT 8000 Pro protocol evidence.
+- [x] `ONLINE-012` Implement temporary zone bypass/un-bypass.
+- [blocked] `ONLINE-013` Implement clear fired-zone/alarm memory command if supported. Guarded API/audit scaffolding is present; command frames remain blocked by missing AMT 8000 Pro protocol evidence.
+- [~] `ONLINE-014` Add API endpoints for each Online command with audit log entries. Guarded endpoints and append-only audit logging exist; command-specific success paths remain evidence-gated.
+- [blocked] `ONLINE-015` Add real-panel test reports for every Online command. Blocked until command captures are available and safe live tests can be run.
 
 ### M2 - Device Discovery And Connection Management
 

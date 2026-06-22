@@ -29,6 +29,7 @@ type Partition struct {
 
 type Zone struct {
 	Index      int    `json:"index"`
+	Name       string `json:"name,omitempty"`
 	State      string `json:"state"`
 	Open       bool   `json:"open"`
 	Violated   bool   `json:"violated"`

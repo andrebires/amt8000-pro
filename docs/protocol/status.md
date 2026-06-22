@@ -87,4 +87,16 @@ commands are not proven for AMT 8000 Pro:
 - PGM list/status
 - alarm-memory clear state
 
+## Zone Names
+
+Zone names are read separately from the full status command.
+
+- Command: `0x33e0`
+- Request payload: 16 zero-based zone indexes.
+- Response payload: 16 records, 15 bytes each.
+- Record format: 1 byte zero-based zone index followed by a 14-byte
+  space-padded text label.
+- Current implementation reads four batches: `0..15`, `16..31`, `32..47`,
+  and `48..63`.
+
 Sanitized real-panel fixtures are stored under `docs/fixtures/status/`.

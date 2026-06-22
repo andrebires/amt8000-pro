@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +30,7 @@ func (fakeClient) GetStatus() (isecnet.PanelStatus, error) {
 			{Index: 0, Enabled: true, State: "DISARMED"},
 		},
 		Zones: []isecnet.Zone{
-			{Index: 2, State: "OPEN", Open: true},
+			{Index: 2, Name: "IVA fundos", State: "OPEN", Open: true},
 		},
 	}, nil
 }
@@ -65,12 +67,44 @@ func (fakeClient) GetEvents() (isecnet.PanelEvents, error) {
 	}, nil
 }
 
+func (fakeClient) ArmPartition(partition int, mode string) (isecnet.PanelStatus, error) {
+	return fakeClient{}.GetStatus()
+}
+
+func (fakeClient) DisarmPartition(partition int) (isecnet.PanelStatus, error) {
+	return fakeClient{}.GetStatus()
+}
+
+func (fakeClient) SetPanelDateTime(value time.Time) (isecnet.PanelStatus, error) {
+	return fakeClient{}.GetStatus()
+}
+
+func (fakeClient) SetZoneBypass(zone int, bypassed bool) (isecnet.PanelStatus, error) {
+	return fakeClient{}.GetStatus()
+}
+
+func (fakeClient) ClearAlarmMemory() (isecnet.PanelStatus, error) {
+	return fakeClient{}.GetStatus()
+}
+
+func (fakeClient) SetPGM(pgm int, active bool) (isecnet.PanelStatus, error) {
+	return fakeClient{}.GetStatus()
+}
+
 type failingEventsClient struct {
 	fakeClient
 }
 
 func (failingEventsClient) GetEvents() (isecnet.PanelEvents, error) {
 	return isecnet.PanelEvents{}, errors.New("panel read failed")
+}
+
+type unsupportedOnlineClient struct {
+	fakeClient
+}
+
+func (unsupportedOnlineClient) ArmPartition(partition int, mode string) (isecnet.PanelStatus, error) {
+	return isecnet.PanelStatus{}, isecnet.ErrOnlineCommandUnsupported
 }
 
 type serializedClient struct {
@@ -89,6 +123,42 @@ func (c *serializedClient) GetEvents() (isecnet.PanelEvents, error) {
 	c.enter()
 	defer c.exit()
 	return fakeClient{}.GetEvents()
+}
+
+func (c *serializedClient) ArmPartition(partition int, mode string) (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.ArmPartition(partition, mode)
+}
+
+func (c *serializedClient) DisarmPartition(partition int) (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.DisarmPartition(partition)
+}
+
+func (c *serializedClient) SetPanelDateTime(value time.Time) (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.SetPanelDateTime(value)
+}
+
+func (c *serializedClient) SetZoneBypass(zone int, bypassed bool) (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.SetZoneBypass(zone, bypassed)
+}
+
+func (c *serializedClient) ClearAlarmMemory() (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.ClearAlarmMemory()
+}
+
+func (c *serializedClient) SetPGM(pgm int, active bool) (isecnet.PanelStatus, error) {
+	c.enter()
+	defer c.exit()
+	return fakeClient{}.SetPGM(pgm, active)
 }
 
 func (c *serializedClient) enter() {
@@ -174,7 +244,7 @@ func TestIndexRendersReadOnlyOnlineStatus(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	for _, want := range []string{"Connection elapsed", "Last refresh", "Panel Clock", "2026-06-20T19:15:21", "Pending Problems", "Events", "CSV", "JSON", "Zone battery is low", "OPEN"} {
+	for _, want := range []string{"Connection elapsed", "Last refresh", "Panel Clock", "2026-06-20T19:15:21", "Pending Problems", "Events", "CSV", "JSON", "Zone battery is low", "IVA fundos", "OPEN"} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
 		}
@@ -258,6 +328,122 @@ func TestPanelCommandsAreSerializedPerConnection(t *testing.T) {
 	}
 }
 
+func TestOnlineCommandEndpointRequiresLogin(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} }, WithAuditSink(noopAuditSink{}))
+	req := httptest.NewRequest(http.MethodPost, "/api/online/partitions/0/arm", strings.NewReader(`{"confirm":true}`))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"ok":false`, `"error":"login required"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestOnlineCommandEndpointRequiresConfirmationAndAuditsRejection(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} }, WithAuditPath(auditPath))
+	req := httptest.NewRequest(http.MethodPost, "/api/online/partitions/0/arm", strings.NewReader(`{"mode":"away"}`))
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"ok":false`, `"error":"confirmation required"`, `"auditId":"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body does not contain %q: %s", want, body)
+		}
+	}
+	audit := readTestFile(t, auditPath)
+	for _, want := range []string{`"panelHost":"192.168.1.50"`, `"action":"arm_partition"`, `"result":"rejected"`, `"error":"confirmation required"`} {
+		if !strings.Contains(audit, want) {
+			t.Fatalf("audit does not contain %q: %s", want, audit)
+		}
+	}
+	if strings.Contains(audit, "878787") {
+		t.Fatalf("audit leaked password: %s", audit)
+	}
+}
+
+func TestOnlineCommandEndpointSuccessShape(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} }, WithAuditSink(noopAuditSink{}))
+	req := httptest.NewRequest(http.MethodPost, "/api/online/partitions/0/disarm", strings.NewReader(`{"confirm":true}`))
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"ok":true`, `"status":`, `"version":"3.2.5"`, `"auditId":"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestOnlineCommandEndpointReportsUnsupportedCommand(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return unsupportedOnlineClient{} }, WithAuditSink(noopAuditSink{}))
+	req := httptest.NewRequest(http.MethodPost, "/api/online/partitions/0/arm", strings.NewReader(`{"confirm":true}`))
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"ok":false`, isecnet.ErrOnlineCommandUnsupported.Error(), `"auditId":"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestOnlineCommandEndpointValidatesInputs(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} }, WithAuditSink(noopAuditSink{}))
+	req := httptest.NewRequest(http.MethodPost, "/api/online/zones/65/bypass", strings.NewReader(`{"confirm":true,"bypassed":true}`))
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "zone must be between 1 and 64") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestIndexRendersOnlineActionsInTargetLists(t *testing.T) {
+	server := NewServer(func(PanelConnection) PanelClient { return fakeClient{} }, WithAuditSink(noopAuditSink{}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(encodedTestCookie(t, PanelConnection{Host: "192.168.1.50", Port: 9009, Password: "878787"}))
+	rec := httptest.NewRecorder()
+
+	server.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"Command Status", "data-partition-action=\"arm\"", "data-zone-action=\"bypass\"", "PGM", "PGM not accessible", "Panel Commands", "Protocol evidence required"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestEventsEndpointReportsDownloadFailure(t *testing.T) {
 	server := NewServer(func(PanelConnection) PanelClient { return failingEventsClient{} })
 	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
@@ -322,4 +508,13 @@ func encodedTestCookie(t *testing.T, conn PanelConnection) *http.Cookie {
 		t.Fatalf("cookies len = %d", len(cookies))
 	}
 	return cookies[0]
+}
+
+func readTestFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
